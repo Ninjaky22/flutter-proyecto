@@ -1,30 +1,56 @@
 import 'dart:io' show File;
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'login_page.dart';
 import 'models.dart';
 import 'pdf_service.dart';
 import 'audit_log_service.dart';
 
+// ── Paleta Kiogloss ─────────────────────────────────────────────────────────
+const _kPrimary    = Color(0xFF7C3AED);
+const _kAccent     = Color(0xFFA855F7);
+const _kSurface    = Color(0xFFFFFFFF);
+const _kBackground = Color(0xFFFAFAFA);
+const _kCardBorder = Color(0xFFEDE9FE);
+const _kTextMain   = Color(0xFF1E1B4B);
+const _kTextSub    = Color(0xFF6B7280);
+
+// ── Modelo interno de PDF cargado ────────────────────────────────────────────
 class _UploadedPdf {
   final String name;
   final int sizeBytes;
+  final String? sha256Hash;
   final File? file;
   final List<int>? bytes;
 
   const _UploadedPdf({
     required this.name,
     required this.sizeBytes,
+    this.sha256Hash,
     this.file,
     this.bytes,
   });
 }
 
+// ── RBAC: pestañas permitidas por rol ────────────────────────────────────────
+const _kRolePages = {
+  'Admin':      [0, 1, 2, 3, 4],
+  'Vendedor':   [0, 2, 3],
+  'Supervisora':[0, 1],
+};
+
 class AdminConsole extends StatefulWidget {
   final String currentUser;
-  const AdminConsole({super.key, this.currentUser = 'michaelhmontilla'});
+  final String currentRole;
+  const AdminConsole({
+    super.key,
+    this.currentUser = 'admin',
+    this.currentRole = 'Admin',
+  });
 
   @override
   State<AdminConsole> createState() => _AdminConsoleState();
@@ -36,12 +62,12 @@ class _AdminConsoleState extends State<AdminConsole> {
   String _filterAction = 'all';
 
   final List<AppUser> _users = [
-    AppUser(name: 'Ana Gómez', email: 'ana.gomez@fet.edu.co', role: 'Estudiante', active: true),
-    AppUser(name: 'Carlos Pérez', email: 'carlos.perez@fet.edu.co', role: 'Docente', active: true),
-    AppUser(name: 'Diana Ríos', email: 'diana.rios@fet.edu.co', role: 'Estudiante'),
-    AppUser(name: 'Esteban Lara', email: 'esteban.lara@fet.edu.co', role: 'Coordinador', active: true),
-    AppUser(name: 'Fabiola Mora', email: 'fabiola.mora@fet.edu.co', role: 'Estudiante'),
-    AppUser(name: 'Gustavo Niño', email: 'gustavo.nino@fet.edu.co', role: 'Estudiante', active: true),
+    AppUser(name: 'María Rodríguez',  email: 'maria.rodriguez@kiogloss.com',  role: 'Vendedora',    active: true),
+    AppUser(name: 'Laura Castillo',   email: 'laura.castillo@kiogloss.com',   role: 'Supervisora',  active: true),
+    AppUser(name: 'Sofía Herrera',    email: 'sofia.herrera@kiogloss.com',    role: 'Vendedora'),
+    AppUser(name: 'Carlos Mejía',     email: 'carlos.mejia@kiogloss.com',     role: 'Gerente',      active: true),
+    AppUser(name: 'Valentina Ríos',   email: 'valentina.rios@kiogloss.com',   role: 'Almacenista'),
+    AppUser(name: 'Andrés Parra',     email: 'andres.parra@kiogloss.com',     role: 'Vendedor',     active: true),
   ];
 
   List<AuditLogEntry> get _filteredLogs {
@@ -50,6 +76,39 @@ class _AdminConsoleState extends State<AdminConsole> {
   }
 
   List<_UploadedPdf> _uploadedPdfs = [];
+
+  // Pestañas habilitadas para el rol actual
+  List<int> get _allowedIndices =>
+      _kRolePages[widget.currentRole] ?? [0];
+
+  // Todas las definiciones de página (índice global 0‥4)
+  static const _allDestinations = [
+    NavigationDestination(
+      icon: Icon(Icons.dashboard_outlined),
+      selectedIcon: Icon(Icons.dashboard),
+      label: 'Inicio',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.people_outline),
+      selectedIcon: Icon(Icons.people),
+      label: 'Usuarios',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.picture_as_pdf_outlined),
+      selectedIcon: Icon(Icons.picture_as_pdf),
+      label: 'Informes',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.upload_file_outlined),
+      selectedIcon: Icon(Icons.upload_file),
+      label: 'Cargar',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.history_outlined),
+      selectedIcon: Icon(Icons.history),
+      label: 'Auditoría',
+    ),
+  ];
 
   @override
   void initState() {
@@ -78,7 +137,7 @@ class _AdminConsoleState extends State<AdminConsole> {
         () => _uploadedPdfs = files
             .map(
               (f) => _UploadedPdf(
-                name: f.path.split('/').last,
+                name: p.basename(f.path),
                 sizeBytes: f.lengthSync(),
                 file: f,
               ),
@@ -88,27 +147,35 @@ class _AdminConsoleState extends State<AdminConsole> {
     } catch (_) {}
   }
 
+  String _computeHash(List<int> bytes) =>
+      sha256.convert(bytes).toString();
+
   Future<void> _pickPdf() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
-      withData: kIsWeb,
+      withData: true,
     );
     if (result == null) return;
-    if (!kIsWeb && result.files.single.path == null) return;
-
     final picked = result.files.single;
     final name = picked.name;
     final sizeBytes = picked.size;
+    final rawBytes = picked.bytes;
+    if (rawBytes == null) return;
+
+    final hash = _computeHash(rawBytes);
 
     if (kIsWeb) {
-      final bytes = picked.bytes;
-      if (bytes == null) return;
       if (!mounted) return;
       setState(
         () => _uploadedPdfs.insert(
           0,
-          _UploadedPdf(name: name, sizeBytes: sizeBytes, bytes: bytes),
+          _UploadedPdf(
+            name: name,
+            sizeBytes: sizeBytes,
+            sha256Hash: hash,
+            bytes: rawBytes,
+          ),
         ),
       );
     } else {
@@ -116,7 +183,22 @@ class _AdminConsoleState extends State<AdminConsole> {
       final dir = await getApplicationDocumentsDirectory();
       final newPath = '${dir.path}/$name';
       await src.copy(newPath);
+      // Recargamos desde disco pero guardamos hash en memoria
+      if (!mounted) return;
       await _loadPdfs();
+      // Actualizar hash del archivo recién agregado
+      setState(() {
+        final idx = _uploadedPdfs.indexWhere((f) => f.name == name);
+        if (idx != -1) {
+          final old = _uploadedPdfs[idx];
+          _uploadedPdfs[idx] = _UploadedPdf(
+            name: old.name,
+            sizeBytes: old.sizeBytes,
+            sha256Hash: hash,
+            file: old.file,
+          );
+        }
+      });
     }
 
     await AuditLogService.log(
@@ -125,6 +207,7 @@ class _AdminConsoleState extends State<AdminConsole> {
       details: {
         'name': name,
         'sizeBytes': sizeBytes,
+        'sha256': hash,
       },
     );
     _loadAuditLogs();
@@ -132,15 +215,16 @@ class _AdminConsoleState extends State<AdminConsole> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: Colors.green.shade700,
+        backgroundColor: Colors.green.shade600,
         behavior: SnackBarBehavior.floating,
-        content: Text('PDF cargado: $name ${kIsWeb ? '(Web)' : ''}'),
+        content: Text('PDF cargado: $name'),
       ),
     );
   }
 
-  void _logout() {
-    AuditLogService.log('logout', actor: widget.currentUser);
+  Future<void> _logout() async {
+    await AuditLogService.log('logout', actor: widget.currentUser);
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginPage()),
     );
@@ -148,6 +232,9 @@ class _AdminConsoleState extends State<AdminConsole> {
 
   @override
   Widget build(BuildContext context) {
+    final allowed = _allowedIndices;
+
+    // Mapeo de índice local (barra de nav) → índice global (página)
     final pages = <Widget>[
       _dashboardTab(),
       _usersTab(),
@@ -155,22 +242,55 @@ class _AdminConsoleState extends State<AdminConsole> {
       _uploadsTab(),
       _auditTab(),
     ];
+    final visiblePages = allowed.map((i) => pages[i]).toList();
+    final visibleDests = allowed.map((i) => _allDestinations[i]).toList();
+
+    // Índice local seleccionado (nunca fuera de rango)
+    final localIdx = _idx.clamp(0, visiblePages.length - 1);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: _kBackground,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: _kSurface,
         elevation: 0,
-        title: Row(
+        surfaceTintColor: Colors.transparent,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: _kCardBorder),
+        ),
+        title: const Row(
           children: [
-            Icon(Icons.shield, color: Colors.cyan.shade300),
-            const SizedBox(width: 10),
-            const Text('Consola FET'),
+            Icon(Icons.spa, color: _kPrimary),
+            SizedBox(width: 10),
+            Text(
+              'Kiogloss',
+              style: TextStyle(
+                color: _kTextMain,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
         actions: [
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: _kPrimary.withAlpha(20),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _kPrimary.withAlpha(60)),
+            ),
+            child: Text(
+              widget.currentRole,
+              style: const TextStyle(
+                color: _kPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, color: _kTextSub),
             tooltip: 'Cerrar sesión',
             onPressed: _logout,
           ),
@@ -179,53 +299,29 @@ class _AdminConsoleState extends State<AdminConsole> {
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         child: Container(
-          key: ValueKey(_idx),
-          child: pages[_idx],
+          key: ValueKey(localIdx),
+          child: visiblePages[localIdx],
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _idx,
-        backgroundColor: const Color(0xFF1E293B),
-        indicatorColor: Colors.cyan.withOpacity(0.25),
+        selectedIndex: localIdx,
+        backgroundColor: _kSurface,
+        indicatorColor: _kPrimary.withAlpha(40),
+        surfaceTintColor: Colors.transparent,
         onDestinationSelected: (i) {
           setState(() => _idx = i);
-          if (i == 4) _loadAuditLogs();
+          // Si navega a Auditoría (índice global 4) la recarga
+          if (allowed[i] == 4) _loadAuditLogs();
         },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Inicio',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Usuarios',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.picture_as_pdf_outlined),
-            selectedIcon: Icon(Icons.picture_as_pdf),
-            label: 'Informes',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.upload_file_outlined),
-            selectedIcon: Icon(Icons.upload_file),
-            label: 'Cargar',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.history_outlined),
-            selectedIcon: Icon(Icons.history),
-            label: 'Auditoría',
-          ),
-        ],
+        destinations: visibleDests,
       ),
     );
   }
 
-  // ---------------- INICIO ----------------
+  // ─── DASHBOARD ───────────────────────────────────────────────────────────
   Widget _dashboardTab() {
-    final total = _users.length;
-    final active = _users.where((u) => u.active).length;
+    final total    = _users.length;
+    final active   = _users.where((u) => u.active).length;
     final inactive = total - active;
 
     return ListView(
@@ -233,46 +329,41 @@ class _AdminConsoleState extends State<AdminConsole> {
       children: [
         const Text(
           'Panel General',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: _kTextMain),
         ),
         const SizedBox(height: 4),
         Text(
           'Bienvenido, ${widget.currentUser}',
-          style: TextStyle(color: Colors.white.withOpacity(0.7)),
+          style: const TextStyle(color: _kTextSub),
         ),
         const SizedBox(height: 20),
         Row(
           children: [
-            Expanded(child: _statCard('Usuarios', '$total', Icons.group, Colors.cyan)),
+            Expanded(child: _statCard('Empleados', '$total', Icons.group, _kPrimary)),
             const SizedBox(width: 12),
-            Expanded(child: _statCard('Activos', '$active', Icons.verified_user, Colors.green)),
+            Expanded(child: _statCard('Activos', '$active', Icons.verified_user, Colors.green.shade600)),
           ],
         ),
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: _statCard('Inactivos', '$inactive', Icons.person_off, Colors.orange)),
+            Expanded(child: _statCard('Inactivos', '$inactive', Icons.person_off, Colors.orange.shade600)),
             const SizedBox(width: 12),
-            Expanded(child: _statCard('PDFs', '${_uploadedPdfs.length}', Icons.picture_as_pdf, Colors.purpleAccent)),
+            Expanded(child: _statCard('PDFs', '${_uploadedPdfs.length}', Icons.picture_as_pdf, _kAccent)),
           ],
         ),
         const SizedBox(height: 28),
         const Text(
           'Accesos rápidos',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _kTextMain),
         ),
         const SizedBox(height: 12),
-        _quickAction(Icons.people, 'Gestionar usuarios', () => setState(() => _idx = 1)),
-        _quickAction(Icons.download, 'Generar informe en PDF', () => setState(() => _idx = 2)),
-        _quickAction(Icons.upload, 'Cargar PDF al sistema', () => setState(() => _idx = 3)),
+        if (_allowedIndices.contains(1))
+          _quickAction(Icons.people, 'Gestionar empleados', () => setState(() => _idx = _allowedIndices.indexOf(1))),
+        if (_allowedIndices.contains(2))
+          _quickAction(Icons.download, 'Generar informe en PDF', () => setState(() => _idx = _allowedIndices.indexOf(2))),
+        if (_allowedIndices.contains(3))
+          _quickAction(Icons.upload, 'Cargar PDF al sistema', () => setState(() => _idx = _allowedIndices.indexOf(3))),
       ],
     );
   }
@@ -281,30 +372,24 @@ class _AdminConsoleState extends State<AdminConsole> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: _kSurface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.35)),
+        border: Border.all(color: color.withAlpha(60)),
+        boxShadow: [
+          BoxShadow(
+            color: color.withAlpha(18),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: color, size: 28),
           const SizedBox(height: 10),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.7),
-              fontSize: 12,
-            ),
-          ),
+          Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: _kTextMain)),
+          Text(label, style: const TextStyle(color: _kTextSub, fontSize: 12)),
         ],
       ),
     );
@@ -312,18 +397,23 @@ class _AdminConsoleState extends State<AdminConsole> {
 
   Widget _quickAction(IconData icon, String label, VoidCallback onTap) {
     return Card(
-      color: const Color(0xFF1E293B),
+      color: _kSurface,
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: _kCardBorder),
+      ),
+      elevation: 0,
       child: ListTile(
-        leading: Icon(icon, color: Colors.cyan.shade300),
-        title: Text(label, style: const TextStyle(color: Colors.white)),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+        leading: Icon(icon, color: _kPrimary),
+        title: Text(label, style: const TextStyle(color: _kTextMain)),
+        trailing: const Icon(Icons.chevron_right, color: _kTextSub),
         onTap: onTap,
       ),
     );
   }
 
-  // ---------------- USUARIOS ----------------
+  // ─── USUARIOS ────────────────────────────────────────────────────────────
   Widget _usersTab() {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
@@ -333,46 +423,47 @@ class _AdminConsoleState extends State<AdminConsole> {
           return const Padding(
             padding: EdgeInsets.only(bottom: 12),
             child: Text(
-              'Validación y activación de perfiles',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
+              'Gestión de empleados',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kTextMain),
             ),
           );
         }
         final u = _users[i - 1];
         return Card(
-          color: const Color(0xFF1E293B),
+          color: _kSurface,
           margin: const EdgeInsets.only(bottom: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: _kCardBorder),
+          ),
+          elevation: 0,
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: u.active ? Colors.green : Colors.grey.shade600,
+              backgroundColor: u.active ? _kPrimary : Colors.grey.shade300,
               child: Text(
                 u.name.substring(0, 1),
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: u.active ? Colors.white : Colors.grey.shade600,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-            title: Text(u.name, style: const TextStyle(color: Colors.white)),
+            title: Text(u.name, style: const TextStyle(color: _kTextMain)),
             subtitle: Text(
               '${u.email}\n${u.role}',
-              style: TextStyle(color: Colors.white.withOpacity(0.7)),
+              style: const TextStyle(color: _kTextSub),
             ),
             isThreeLine: true,
             trailing: Switch(
               value: u.active,
-              activeColor: Colors.green,
+              activeThumbColor: Colors.white,
+              activeTrackColor: _kPrimary,
               onChanged: (v) async {
                 setState(() => u.active = v);
                 await AuditLogService.log(
                   'user_status_changed',
                   actor: widget.currentUser,
-                  details: {
-                    'user': u.email,
-                    'name': u.name,
-                    'active': v,
-                  },
+                  details: {'user': u.email, 'name': u.name, 'active': v},
                 );
                 _loadAuditLogs();
               },
@@ -383,7 +474,7 @@ class _AdminConsoleState extends State<AdminConsole> {
     );
   }
 
-  // ---------------- INFORMES ----------------
+  // ─── INFORMES ────────────────────────────────────────────────────────────
   Widget _reportsTab() {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -392,20 +483,13 @@ class _AdminConsoleState extends State<AdminConsole> {
         children: [
           const Text(
             'Informes en PDF',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _kTextMain),
           ),
           const SizedBox(height: 6),
-          Text(
-            'Genera, comparte o descarga los informes.',
-            style: TextStyle(color: Colors.white.withOpacity(0.7)),
-          ),
+          const Text('Genera, comparte o descarga los informes.', style: TextStyle(color: _kTextSub)),
           const SizedBox(height: 20),
           _reportCard(
-            title: 'Informe de Usuarios',
+            title: 'Informe de Empleados',
             desc: 'Listado completo con estado de activación',
             icon: Icons.group,
             onTap: () async {
@@ -430,10 +514,7 @@ class _AdminConsoleState extends State<AdminConsole> {
                 details: {'type': 'summary'},
               );
               _loadAuditLogs();
-              await PdfService.generateSummaryReport(
-                _users,
-                _uploadedPdfs.length,
-              );
+              await PdfService.generateSummaryReport(_users, _uploadedPdfs.length);
             },
           ),
         ],
@@ -448,7 +529,12 @@ class _AdminConsoleState extends State<AdminConsole> {
     required VoidCallback onTap,
   }) {
     return Card(
-      color: const Color(0xFF1E293B),
+      color: _kSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: _kCardBorder),
+      ),
+      elevation: 0,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -456,32 +542,19 @@ class _AdminConsoleState extends State<AdminConsole> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.cyan.withOpacity(0.18),
+                color: _kPrimary.withAlpha(20),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: Colors.cyan.shade300),
+              child: Icon(icon, color: _kPrimary),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
+                  Text(title, style: const TextStyle(color: _kTextMain, fontWeight: FontWeight.bold, fontSize: 15)),
                   const SizedBox(height: 2),
-                  Text(
-                    desc,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 12,
-                    ),
-                  ),
+                  Text(desc, style: const TextStyle(color: _kTextSub, fontSize: 12)),
                 ],
               ),
             ),
@@ -489,7 +562,7 @@ class _AdminConsoleState extends State<AdminConsole> {
               icon: const Icon(Icons.download, size: 18),
               label: const Text('PDF'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.cyan.shade700,
+                backgroundColor: _kPrimary,
                 foregroundColor: Colors.white,
               ),
               onPressed: onTap,
@@ -500,7 +573,7 @@ class _AdminConsoleState extends State<AdminConsole> {
     );
   }
 
-  // ---------------- CARGAR ----------------
+  // ─── CARGAR ──────────────────────────────────────────────────────────────
   Widget _uploadsTab() {
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -513,18 +586,14 @@ class _AdminConsoleState extends State<AdminConsole> {
               const Expanded(
                 child: Text(
                   'PDFs cargados',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _kTextMain),
                 ),
               ),
               ElevatedButton.icon(
                 icon: const Icon(Icons.upload),
                 label: const Text('Cargar'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyan.shade700,
+                  backgroundColor: _kPrimary,
                   foregroundColor: Colors.white,
                 ),
                 onPressed: _pickPdf,
@@ -538,98 +607,92 @@ class _AdminConsoleState extends State<AdminConsole> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.folder_open,
-                          size: 64,
-                          color: Colors.white.withOpacity(0.3),
-                        ),
+                        Icon(Icons.folder_open, size: 64, color: Colors.grey.shade300),
                         const SizedBox(height: 12),
-                        Text(
-                          'No hay PDFs cargados aún',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
-                          ),
-                        ),
+                        const Text('No hay PDFs cargados aún', style: TextStyle(color: _kTextSub)),
                       ],
                     ),
                   )
                 : ListView.builder(
                     itemCount: _uploadedPdfs.length,
                     itemBuilder: (_, i) {
-                        final item = _uploadedPdfs[i];
-                        final name = item.name;
-                        final sizeKb =
-                          (item.sizeBytes / 1024).toStringAsFixed(1);
+                      final item = _uploadedPdfs[i];
+                      final sizeKb = (item.sizeBytes / 1024).toStringAsFixed(1);
+                      final hashShort = item.sha256Hash != null
+                          ? '${item.sha256Hash!.substring(0, 16)}…'
+                          : null;
                       return Card(
-                        color: const Color(0xFF1E293B),
+                        color: _kSurface,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: _kCardBorder),
+                        ),
+                        elevation: 0,
                         child: ListTile(
-                          leading: const Icon(
-                            Icons.picture_as_pdf,
-                            color: Colors.redAccent,
+                          leading: const Icon(Icons.picture_as_pdf, color: Colors.redAccent),
+                          title: Text(item.name, style: const TextStyle(color: _kTextMain)),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('$sizeKb KB', style: const TextStyle(color: _kTextSub, fontSize: 12)),
+                              if (hashShort != null)
+                                Tooltip(
+                                  message: 'SHA-256: ${item.sha256Hash}',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.verified_user, size: 12, color: Colors.green.shade600),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'SHA-256: $hashShort',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.green.shade700,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
                           ),
-                          title: Text(
-                            name,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          subtitle: Text(
-                            '$sizeKb KB',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.6),
-                            ),
-                          ),
+                          isThreeLine: hashShort != null,
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: Icon(
-                                  Icons.open_in_new,
-                                  color: Colors.cyan.shade300,
-                                ),
+                                icon: const Icon(Icons.open_in_new, color: _kPrimary),
                                 tooltip: 'Abrir',
                                 onPressed: () async {
                                   await AuditLogService.log(
                                     'pdf_opened',
                                     actor: widget.currentUser,
-                                    details: {'name': name},
+                                    details: {'name': item.name},
                                   );
                                   _loadAuditLogs();
-                                  if (kIsWeb) {
-                                    final bytes = item.bytes;
-                                    if (bytes != null) {
-                                      await PdfService.openPdf(name, bytes);
-                                    }
-                                  } else {
-                                    final file = item.file;
-                                    if (file != null) {
-                                      await PdfService.openPdf(
-                                        name,
-                                        await file.readAsBytes(),
-                                      );
-                                    }
+                                  final bytes = kIsWeb
+                                      ? item.bytes
+                                      : await item.file?.readAsBytes();
+                                  if (bytes != null) {
+                                    await PdfService.openPdf(item.name, bytes);
                                   }
                                 },
                               ),
                               IconButton(
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  color: Colors.redAccent,
-                                ),
+                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                                 tooltip: 'Eliminar',
                                 onPressed: () async {
                                   if (kIsWeb) {
                                     if (!mounted) return;
                                     setState(() => _uploadedPdfs.removeAt(i));
                                   } else {
-                                    final file = item.file;
-                                    if (file != null) {
-                                      await file.delete();
-                                    }
+                                    await item.file?.delete();
                                     await _loadPdfs();
                                   }
                                   await AuditLogService.log(
                                     'pdf_deleted',
                                     actor: widget.currentUser,
-                                    details: {'name': name},
+                                    details: {'name': item.name},
                                   );
                                   _loadAuditLogs();
                                 },
@@ -646,10 +709,9 @@ class _AdminConsoleState extends State<AdminConsole> {
     );
   }
 
-  // ---------------- AUDITORÍA ----------------
+  // ─── AUDITORÍA ───────────────────────────────────────────────────────────
   Widget _auditTab() {
     final filtered = _filteredLogs;
-
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -661,18 +723,14 @@ class _AdminConsoleState extends State<AdminConsole> {
               const Expanded(
                 child: Text(
                   'Registro de Auditoría',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _kTextMain),
                 ),
               ),
               ElevatedButton.icon(
                 icon: const Icon(Icons.refresh),
                 label: const Text('Actualizar'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyan.shade700,
+                  backgroundColor: _kPrimary,
                   foregroundColor: Colors.white,
                 ),
                 onPressed: _loadAuditLogs,
@@ -680,10 +738,7 @@ class _AdminConsoleState extends State<AdminConsole> {
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            'Historial de acciones del sistema',
-            style: TextStyle(color: Colors.white.withOpacity(0.7)),
-          ),
+          const Text('Historial de acciones del sistema', style: TextStyle(color: _kTextSub)),
           const SizedBox(height: 16),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -691,6 +746,7 @@ class _AdminConsoleState extends State<AdminConsole> {
               children: [
                 _filterChip('Todas', 'all'),
                 _filterChip('Logins', 'login_success'),
+                _filterChip('Fallidos', 'login_failed'),
                 _filterChip('Usuarios', 'user_status_changed'),
                 _filterChip('Informes', 'report_generated'),
                 _filterChip('Cargas', 'pdf_uploaded'),
@@ -705,19 +761,13 @@ class _AdminConsoleState extends State<AdminConsole> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.history,
-                          size: 64,
-                          color: Colors.white.withOpacity(0.3),
-                        ),
+                        Icon(Icons.history, size: 64, color: Colors.grey.shade300),
                         const SizedBox(height: 12),
                         Text(
                           _filterAction == 'all'
                               ? 'No hay registros aún'
                               : 'No hay registros para esta actividad',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
-                          ),
+                          style: const TextStyle(color: _kTextSub),
                         ),
                       ],
                     ),
@@ -730,32 +780,27 @@ class _AdminConsoleState extends State<AdminConsole> {
                           '${log.timestamp.hour}:${log.timestamp.minute.toString().padLeft(2, '0')}';
                       final date =
                           '${log.timestamp.day}/${log.timestamp.month}/${log.timestamp.year}';
-
                       return Card(
-                        color: const Color(0xFF1E293B),
+                        color: _kSurface,
                         margin: const EdgeInsets.only(bottom: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: _kCardBorder),
+                        ),
+                        elevation: 0,
                         child: ExpansionTile(
                           title: Text(
                             log.action,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
+                            style: const TextStyle(color: _kTextMain, fontWeight: FontWeight.bold),
                           ),
                           subtitle: Text(
                             '${log.actor} • $time',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.6),
-                              fontSize: 12,
-                            ),
+                            style: const TextStyle(color: _kTextSub, fontSize: 12),
                           ),
                           leading: _getActionIcon(log.action),
                           trailing: Text(
                             date,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.5),
-                              fontSize: 11,
-                            ),
+                            style: const TextStyle(color: _kTextSub, fontSize: 11),
                           ),
                           children: [
                             Container(
@@ -763,31 +808,18 @@ class _AdminConsoleState extends State<AdminConsole> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
+                                  const Text(
                                     'Detalles:',
-                                    style: TextStyle(
-                                      color: Colors.cyan.shade300,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
+                                    style: TextStyle(color: _kPrimary, fontWeight: FontWeight.bold, fontSize: 12),
                                   ),
                                   const SizedBox(height: 8),
                                   if (log.details != null)
                                     Text(
                                       log.details.toString(),
-                                      style: TextStyle(
-                                        color: Colors.white.withOpacity(0.7),
-                                        fontSize: 11,
-                                        fontFamily: 'monospace',
-                                      ),
+                                      style: const TextStyle(color: _kTextSub, fontSize: 11, fontFamily: 'monospace'),
                                     )
                                   else
-                                    Text(
-                                      'Sin detalles adicionales',
-                                      style: TextStyle(
-                                        color: Colors.white.withOpacity(0.5),
-                                      ),
-                                    ),
+                                    const Text('Sin detalles adicionales', style: TextStyle(color: _kTextSub)),
                                 ],
                               ),
                             ),
@@ -812,10 +844,11 @@ class _AdminConsoleState extends State<AdminConsole> {
         onSelected: (v) {
           if (v) setState(() => _filterAction = value);
         },
-        selectedColor: Colors.cyan.shade700,
-        backgroundColor: const Color(0xFF1E293B),
+        selectedColor: _kPrimary,
+        backgroundColor: _kSurface,
+        side: const BorderSide(color: _kCardBorder),
         labelStyle: TextStyle(
-          color: isSelected ? Colors.white : Colors.white70,
+          color: isSelected ? Colors.white : _kTextSub,
           fontSize: 12,
         ),
       ),
@@ -825,19 +858,19 @@ class _AdminConsoleState extends State<AdminConsole> {
   Icon _getActionIcon(String action) {
     switch (action) {
       case 'login_success':
-        return Icon(Icons.login, color: Colors.green.shade400);
+        return Icon(Icons.login, color: Colors.green.shade600);
       case 'login_failed':
         return Icon(Icons.cancel, color: Colors.red.shade400);
       case 'logout':
         return Icon(Icons.logout, color: Colors.orange.shade400);
       case 'user_status_changed':
-        return Icon(Icons.person_outline, color: Colors.cyan.shade300);
+        return const Icon(Icons.person_outline, color: _kPrimary);
       case 'report_generated':
         return Icon(Icons.description, color: Colors.blue.shade400);
       case 'pdf_uploaded':
-        return Icon(Icons.upload, color: Colors.purple.shade400);
+        return const Icon(Icons.upload, color: _kAccent);
       case 'pdf_opened':
-        return Icon(Icons.open_in_new, color: Colors.yellow.shade600);
+        return Icon(Icons.open_in_new, color: Colors.amber.shade600);
       case 'pdf_deleted':
         return Icon(Icons.delete, color: Colors.red.shade600);
       default:

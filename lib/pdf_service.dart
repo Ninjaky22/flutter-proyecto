@@ -4,9 +4,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'models.dart';
 
-/// Servicio para generar y compartir/descargar PDFs.
-/// `Printing.layoutPdf` abre el diálogo del sistema donde el usuario
-/// puede imprimir, compartir o guardar el archivo.
 class PdfService {
   static Future<void> generateUsersReport(List<AppUser> users) async {
     final pdf = pw.Document();
@@ -16,7 +13,7 @@ class PdfService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (ctx) => [
-          _header('Informe de Usuarios'),
+          _header('Informe de Empleados'),
           pw.SizedBox(height: 12),
           pw.Text(
             'Fecha de generación: ${_formattedDate()}',
@@ -37,10 +34,10 @@ class PdfService {
               fontWeight: pw.FontWeight.bold,
               color: PdfColors.white,
             ),
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.purple900),
             cellAlignment: pw.Alignment.centerLeft,
             cellStyle: const pw.TextStyle(fontSize: 11),
-            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+            border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
           ),
           pw.SizedBox(height: 24),
           _footer(),
@@ -50,7 +47,7 @@ class PdfService {
 
     await Printing.layoutPdf(
       onLayout: (_) => pdf.save(),
-      name: 'informe_usuarios_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      name: 'kiogloss_empleados_${DateTime.now().millisecondsSinceEpoch}.pdf',
     );
   }
 
@@ -58,7 +55,7 @@ class PdfService {
     List<AppUser> users,
     int pdfCount,
   ) async {
-    final active = users.where((u) => u.active).length;
+    final active   = users.where((u) => u.active).length;
     final inactive = users.length - active;
     final pct = users.isEmpty
         ? '0.0'
@@ -79,24 +76,23 @@ class PdfService {
               style: const pw.TextStyle(color: PdfColors.grey700),
             ),
             pw.SizedBox(height: 24),
-            _kpi('Total de usuarios registrados', users.length.toString()),
-            _kpi('Usuarios activos', active.toString()),
-            _kpi('Usuarios inactivos', inactive.toString()),
+            _kpi('Total de empleados registrados', users.length.toString()),
+            _kpi('Empleados activos', active.toString()),
+            _kpi('Empleados inactivos', inactive.toString()),
             _kpi('PDFs cargados', pdfCount.toString()),
-            _kpi('% de usuarios activos', '$pct %'),
+            _kpi('% de empleados activos', '$pct %'),
             pw.SizedBox(height: 30),
             pw.Container(
               padding: const pw.EdgeInsets.all(12),
               decoration: pw.BoxDecoration(
-                color: PdfColors.blue50,
-                border: pw.Border.all(color: PdfColors.blue200),
+                color: PdfColors.purple50,
+                border: pw.Border.all(color: PdfColors.purple200),
                 borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
               ),
               child: pw.Text(
-                'Documento generado automáticamente desde la consola de '
-                'administración FET. Uso académico - Especialización en '
-                'Ciberseguridad.',
-                style: const pw.TextStyle(color: PdfColors.blue900, fontSize: 11),
+                'Documento generado automáticamente desde el panel de '
+                'administración Kiogloss. Uso interno — Beauty Products.',
+                style: const pw.TextStyle(color: PdfColors.purple900, fontSize: 11),
               ),
             ),
             pw.Spacer(),
@@ -111,11 +107,10 @@ class PdfService {
 
     await Printing.layoutPdf(
       onLayout: (_) => pdf.save(),
-      name: 'informe_resumido_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      name: 'kiogloss_resumen_${DateTime.now().millisecondsSinceEpoch}.pdf',
     );
   }
 
-  /// Abre un PDF previamente cargado por el usuario.
   static Future<void> openPdf(String name, List<int> bytes) async {
     await Printing.layoutPdf(
       onLayout: (_) => Uint8List.fromList(bytes),
@@ -123,20 +118,20 @@ class PdfService {
     );
   }
 
-  // -------- helpers --------
+  // ── helpers ──────────────────────────────────────────────────────────────
   static pw.Widget _header(String subtitle) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Text(
-          'FET - Consola de Administración',
+          'Kiogloss Beauty Products',
           style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
         ),
         pw.Text(
           subtitle,
           style: const pw.TextStyle(fontSize: 14, color: PdfColors.grey700),
         ),
-        pw.Divider(color: PdfColors.blue900, thickness: 1.2),
+        pw.Divider(color: PdfColors.purple900, thickness: 1.2),
       ],
     );
   }
@@ -145,7 +140,7 @@ class PdfService {
     return pw.Container(
       alignment: pw.Alignment.center,
       child: pw.Text(
-        'Fundación Escuela Tecnológica de Neiva — Especialización en Ciberseguridad',
+        '© 2026 Kiogloss Beauty Products — Panel de Administración',
         style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
       ),
     );
@@ -163,7 +158,7 @@ class PdfService {
             style: pw.TextStyle(
               fontSize: 13,
               fontWeight: pw.FontWeight.bold,
-              color: PdfColors.blue900,
+              color: PdfColors.purple900,
             ),
           ),
         ],

@@ -1,119 +1,129 @@
-# Manual rápido — Consola de Administración FET (Flutter)
+# Manual rápido — Panel de Administración Kiogloss (Flutter)
 
 ## 1. Objetivo
 
-Aplicación móvil desarrollada en **Flutter** que demuestra, en un contexto académico de la Especialización en Ciberseguridad, cuatro funcionalidades clave:
+Aplicación móvil desarrollada en **Flutter** para **Kiogloss Beauty Products**.  
+Cubre cinco funcionalidades principales:
 
-1. **Login** con validación de credenciales y efectos visuales.
-2. **Consola de administración** con gestión de usuarios.
-3. **Generación y descarga** de informes en PDF.
-4. **Carga (upload)** de archivos PDF dentro de la aplicación.
+1. **Login** con validación de credenciales, roles y efectos visuales.
+2. **Panel de administración** con acceso controlado por roles (RBAC).
+3. **Gestión de empleados** (activar / desactivar perfiles).
+4. **Generación y descarga** de informes en PDF.
+5. **Carga de archivos PDF** con validación de integridad SHA-256.
+6. **Registro de auditoría** persistente de todas las acciones.
 
 ---
 
 ## 2. Credenciales de acceso (demo)
 
-| Campo       | Valor              |
-|-------------|--------------------|
-| Usuario     | `michaelhmontilla` |
-| Contraseña  | `2026`             |
+| Usuario      | Contraseña     | Rol        | Pestañas disponibles                         |
+|--------------|----------------|------------|----------------------------------------------|
+| `admin`      | `kiogloss2026` | Admin      | Inicio · Usuarios · Informes · Cargar · Auditoría |
+| `vendedor`   | `ventas2026`   | Vendedor   | Inicio · Informes · Cargar                   |
+| `supervisor` | `super2026`    | Supervisora| Inicio · Usuarios                            |
 
-> Cualquier otra combinación muestra un mensaje de error.
+> Cualquier otra combinación muestra un mensaje de error y registra el intento fallido en auditoría.
 
 ---
 
 ## 3. Estructura del proyecto
 
 ```
-fet_admin_console/
-├── pubspec.yaml              # Dependencias del proyecto
+kiogloss_admin/
+├── pubspec.yaml                   # Dependencias (incluye crypto ^3.0.3)
 └── lib/
-    ├── main.dart             # Punto de entrada y tema oscuro Material 3
-    ├── login_page.dart       # Pantalla de login con animaciones
-    ├── admin_console.dart    # Consola con 4 pestañas
-    ├── pdf_service.dart      # Generación y apertura de PDFs
-    └── models.dart           # Modelo de datos AppUser
+    ├── main.dart                  # Punto de entrada — tema claro Material 3 morado
+    ├── login_page.dart            # Pantalla de login multi-usuario con RBAC
+    ├── admin_console.dart         # Consola con pestañas filtradas por rol
+    ├── pdf_service.dart           # Generación y apertura de PDFs
+    ├── audit_log_service.dart     # Log de auditoría persistente (SharedPreferences)
+    └── models.dart                # Modelos AppUser y AuditLogEntry
 ```
 
 ---
 
 ## 4. Cómo ejecutar
 
-1. Tener Flutter instalado: <https://docs.flutter.dev/get-started/install>
-2. Verificar instalación: `flutter doctor`
-3. Crear el proyecto base (una sola vez):
-   ```bash
-   flutter create fet_admin_console
-   ```
-4. Reemplazar el contenido de `pubspec.yaml` y la carpeta `lib/` con los archivos suministrados.
-5. Instalar dependencias:
-   ```bash
-   flutter pub get
-   ```
-6. Ejecutar en emulador o dispositivo:
-   ```bash
-   flutter run
-   ```
+1. Verificar Flutter instalado: `flutter doctor`
+2. Instalar dependencias: `flutter pub get`
+3. Ejecutar: `flutter run`
 
 ---
 
-## 5. Componentes principales
+## 5. Funcionalidades principales
 
-### 5.1 Pantalla de login (`login_page.dart`)
-- Fondo con **degradado** azul oscuro/púrpura (estilo ciberseguridad).
-- Tarjeta con efecto **glassmorphism** (semitransparente con borde sutil).
-- Animaciones de entrada **fade + slide** al abrir la pantalla.
-- Validación de campos vacíos y de credenciales.
-- Botón con **indicador de carga** mientras valida.
-- Mensaje de error tipo *snackbar* si las credenciales son incorrectas.
-- Botón para **mostrar/ocultar** la contraseña.
+### 5.1 Pantalla de login
+- Gradiente violeta muy claro (paleta Kiogloss).
+- Tarjeta blanca con borde morado — estilo elegante.
+- Animaciones fade + slide al abrir.
+- Autenticación contra mapa de credenciales por rol.
+- Mensaje de error via *snackbar* rojo ante credenciales incorrectas.
 
-### 5.2 Consola de administración (`admin_console.dart`)
-Cuatro pestañas accesibles desde la barra inferior:
+### 5.2 RBAC — Control de acceso por rol
 
-| Pestaña    | Función                                                          |
-|------------|------------------------------------------------------------------|
-| Inicio     | Tarjetas de KPIs (usuarios totales, activos, inactivos, PDFs)    |
-| Usuarios   | Lista de perfiles con interruptor para activar/desactivar        |
-| Informes   | Dos PDFs descargables: *Listado de usuarios* y *Resumen*         |
-| Cargar     | Selector de archivos PDF y lista de los ya cargados              |
+Al iniciar sesión, el sistema determina el rol del usuario y muestra **solo** las pestañas que le corresponden:
 
-### 5.3 Servicio de PDFs (`pdf_service.dart`)
-- Usa el paquete `pdf` para construir el documento (encabezado, tabla, KPIs).
-- Usa `printing` para mostrar el diálogo de **imprimir / compartir / guardar**.
-- Usa `path_provider` y `file_picker` para gestionar archivos locales.
+```
+Admin      → todas las pestañas (5)
+Vendedor   → Inicio, Informes, Cargar
+Supervisora→ Inicio, Usuarios
+```
+
+El rol se muestra como un badge morado en la barra superior.
+
+### 5.3 Gestión de empleados (pestaña Usuarios)
+- Lista con avatar, correo y rol.
+- Interruptor para activar/desactivar. Cada cambio se registra en auditoría.
+
+### 5.4 Informes PDF (pestaña Informes)
+- **Informe de Empleados**: tabla con nombre, correo, rol y estado.
+- **Informe Resumido**: KPIs numéricos del sistema.
+- Ambos con encabezado y pie de página de Kiogloss en morado.
+- El diálogo del sistema permite imprimir, compartir o guardar.
+
+### 5.5 Carga de PDFs con SHA-256 (pestaña Cargar)
+
+Al cargar un archivo PDF, el sistema:
+1. Calcula el hash **SHA-256** de los bytes del archivo.
+2. Muestra los primeros 16 caracteres del hash en la tarjeta (con tooltip completo).
+3. Registra el hash completo en el log de auditoría.
+
+Esto garantiza la **integridad** del archivo: si el PDF es alterado, su hash cambia.
+
+```
+Ejemplo de hash:
+SHA-256: a3f2c8b91d4e7f6a…  ← primeros 16 chars + "…"
+```
+
+### 5.6 Registro de auditoría (pestaña Auditoría)
+- Guarda hasta 1 000 eventos en `SharedPreferences`.
+- Ordena por fecha descendente (más recientes primero).
+- Filtros: Todas · Logins · Fallidos · Usuarios · Informes · Cargas · Eliminaciones.
+- Cada entrada muestra acción, actor, hora y detalles expandibles.
 
 ---
 
-## 6. Demostración en clase (5–10 min)
+## 6. Demostración (5–10 min)
 
-| Paso | Acción                                                                | Qué se muestra                          |
-|------|-----------------------------------------------------------------------|-----------------------------------------|
-| 1    | Probar credenciales **incorrectas**                                   | Validación + mensaje de error           |
-| 2    | Ingresar las credenciales **correctas**                               | Animación de transición a la consola    |
-| 3    | Recorrer las **tarjetas de KPIs** del panel de inicio                 | Indicadores en tiempo real              |
-| 4    | Activar/desactivar un usuario en **Usuarios**                         | Cambio inmediato en KPIs y avatar       |
-| 5    | Generar un **informe PDF** desde la pestaña Informes                  | Descarga / vista previa del PDF         |
-| 6    | **Cargar un PDF** desde el dispositivo                                | El archivo aparece listado              |
-| 7    | Abrir un PDF cargado                                                  | Visor del sistema                       |
-| 8    | Cerrar sesión con el ícono superior derecho                           | Vuelve al login con animación           |
-
----
-
-## 7. Conceptos pedagógicos asociados
-
-- **Autenticación básica** → analogía con la función *Identify* del NIST CSF 2.0.
-- **Gestión de identidades y accesos (IAM)** → activar/desactivar perfiles.
-- **Evidencias y auditoría** → generación de informes en PDF.
-- **Validación de entrada** → control del tipo de archivo cargado (.pdf).
+| Paso | Acción | Qué se muestra |
+|------|--------|----------------|
+| 1 | Login con credenciales **incorrectas** | Error en snackbar + evento en auditoría |
+| 2 | Login como `vendedor` | Solo 3 pestañas visibles (RBAC) |
+| 3 | Login como `admin` | Las 5 pestañas disponibles |
+| 4 | Activar/desactivar un empleado | Cambio inmediato en KPIs |
+| 5 | Generar informe PDF | Encabezado Kiogloss morado |
+| 6 | Cargar un PDF | Hash SHA-256 visible en la tarjeta |
+| 7 | Ver pestaña Auditoría | Historial completo con filtros |
+| 8 | Cerrar sesión | Vuelve al login con animación |
 
 ---
 
-## 8. Mejoras propuestas como ejercicio para los estudiantes
+## 7. Conceptos demostrados
 
-1. Conectar a un *backend* real (Firebase, REST API).
-2. Cifrar las credenciales (hash + salt con `bcrypt` o similar).
-3. Implementar **roles diferenciados (RBAC)**.
-4. Registrar un **log de auditoría** de cada acción.
-5. Añadir **autenticación de doble factor (2FA)**.
-6. Validar la **integridad** del PDF cargado (hash SHA-256).
+| Concepto | Implementación |
+|---|---|
+| Autenticación | Login multi-usuario con validación de credenciales |
+| RBAC | Pestañas dinámicas según rol del usuario |
+| Integridad de archivos | Hash SHA-256 calculado al momento de la carga |
+| Auditoría | Log persistente de todas las acciones del sistema |
+| Generación de informes | PDFs descargables con `pdf` + `printing` |

@@ -3,25 +3,29 @@ import 'login_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const FetApp());
+  runApp(const KioglossApp());
 }
 
-class FetApp extends StatelessWidget {
-  const FetApp({super.key});
+class KioglossApp extends StatelessWidget {
+  const KioglossApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'FET - Consola de Administración',
+      title: 'Kiogloss - Panel de Administración',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        brightness: Brightness.dark,
+        brightness: Brightness.light,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF06B6D4),
-          brightness: Brightness.dark,
+          seedColor: const Color(0xFF7C3AED),
+          brightness: Brightness.light,
         ),
-        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        scaffoldBackgroundColor: const Color(0xFFFAFAFA),
+        cardTheme: const CardThemeData(
+          color: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
       ),
       home: const LoginPage(),
     );

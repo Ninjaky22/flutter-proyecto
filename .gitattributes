@@ -1,0 +1,21 @@
+# Normaliza todos los archivos de texto a LF en el repositorio.
+# En Windows Git los convierte a CRLF al hacer checkout (sin warnings).
+* text=auto eol=lf
+
+# Binarios — nunca tocar los saltos de línea
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary
+*.zip  binary
+*.jar  binary
+*.apk  binary
+*.so   binary
+*.dylib binary
+*.dll  binary
